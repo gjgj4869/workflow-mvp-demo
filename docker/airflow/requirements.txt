@@ -1,0 +1,10 @@
+# Airflow providers
+apache-airflow-providers-postgres==5.10.0
+
+# Data science libraries (commonly used in ML workflows)
+pandas==2.1.4
+numpy==1.26.3
+scikit-learn==1.3.2
+
+# Additional utilities
+requests==2.31.0

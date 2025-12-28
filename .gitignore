@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment variables
+.env
+.env.local
+
+# Database
+*.db
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Airflow
+dags/__pycache__/
+dags/*.pyc
+airflow.cfg
+airflow.db
+unittests.cfg
+
+# Docker
+*.pid
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated DAG files (optional, comment out if you want to track them)
+# dags/workflow_*.py
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.next/
+frontend/build/
+frontend/.cache/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+nul
