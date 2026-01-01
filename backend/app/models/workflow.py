@@ -17,6 +17,7 @@ class Workflow(Base):
     description = Column(Text)
     schedule = Column(String(100))  # Cron expression or Airflow preset
     is_active = Column(Boolean, default=True)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

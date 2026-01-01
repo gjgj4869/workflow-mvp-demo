@@ -38,7 +38,14 @@ export interface Task {
   id: string;
   workflow_id: string;
   name: string;
-  python_callable: string;
+  execution_mode: string;
+  python_callable?: string;
+  git_repository?: string;
+  git_branch?: string;
+  git_commit_sha?: string;
+  script_path?: string;
+  function_name?: string;
+  docker_image: string;
   params: Record<string, any>;
   dependencies: string[];
   retry_count: number;
@@ -49,7 +56,14 @@ export interface Task {
 export interface TaskCreate {
   workflow_id: string;
   name: string;
-  python_callable: string;
+  execution_mode: string;
+  python_callable?: string;
+  git_repository?: string;
+  git_branch?: string;
+  git_commit_sha?: string;
+  script_path?: string;
+  function_name?: string;
+  docker_image?: string;
   params?: Record<string, any>;
   dependencies?: string[];
   retry_count?: number;
@@ -58,7 +72,14 @@ export interface TaskCreate {
 
 export interface TaskUpdate {
   name?: string;
+  execution_mode?: string;
   python_callable?: string;
+  git_repository?: string;
+  git_branch?: string;
+  git_commit_sha?: string;
+  script_path?: string;
+  function_name?: string;
+  docker_image?: string;
   params?: Record<string, any>;
   dependencies?: string[];
   retry_count?: number;
@@ -102,7 +123,7 @@ export interface Stats {
 export const workflowApi = {
   list: async (): Promise<Workflow[]> => {
     const response = await apiClient.get('/api/v1/workflows/');
-    return response.data;
+    return response.data.workflows || [];
   },
 
   get: async (id: string): Promise<Workflow> => {
@@ -134,7 +155,7 @@ export const workflowApi = {
 export const taskApi = {
   list: async (workflowId: string): Promise<Task[]> => {
     const response = await apiClient.get(`/api/v1/workflows/${workflowId}/tasks`);
-    return response.data;
+    return response.data.tasks || [];
   },
 
   get: async (id: string): Promise<Task> => {

@@ -21,10 +21,7 @@ class Settings(BaseSettings):
     DAGS_FOLDER: str = "/app/dags"
 
     # CORS
-    CORS_ORIGINS: list[str] = [
-        "http://localhost:3000",
-        "http://localhost:5173",  # Vite default port
-    ]
+    CORS_ORIGINS: list[str] = ["*"]  # Allow all origins in development
 
     class Config:
         env_file = ".env"

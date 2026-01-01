@@ -1,5 +1,5 @@
-import { Table, Button, Space, Tag, Popconfirm, message } from 'antd';
-import { EditOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Tag, Popconfirm, message, Tooltip } from 'antd';
+import { EditOutlined, DeleteOutlined, GithubOutlined, CodeOutlined } from '@ant-design/icons';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { taskApi, type Task } from '@/services/api';
 
@@ -33,7 +33,20 @@ function TaskList({ tasks, loading, onEdit, workflowId }: TaskListProps) {
       title: 'Task Name',
       dataIndex: 'name',
       key: 'name',
-      render: (name: string) => <strong>{name}</strong>,
+      render: (name: string, record: Task) => (
+        <Space>
+          {record.script_path && record.function_name ? (
+            <Tooltip title={`Git: ${record.script_path} → ${record.function_name}`}>
+              <GithubOutlined style={{ color: '#1890ff', fontSize: '16px' }} />
+            </Tooltip>
+          ) : (
+            <Tooltip title="Inline Code">
+              <CodeOutlined style={{ color: '#52c41a', fontSize: '16px' }} />
+            </Tooltip>
+          )}
+          <strong>{name}</strong>
+        </Space>
+      ),
     },
     {
       title: 'Dependencies',

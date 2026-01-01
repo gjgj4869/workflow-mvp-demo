@@ -41,24 +41,28 @@ services:
       - ../dags:/opt/airflow/dags
       - ../logs:/opt/airflow/logs
       - ../plugins:/opt/airflow/plugins
+    user: "0:0"
     entrypoint: /bin/bash
     command:
       - -c
       - |
-        airflow db init
-        airflow db migrate
-        airflow users create \
+        chown -R 50000:0 /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+        chmod -R 775 /opt/airflow/logs
+        su airflow -c "airflow db init"
+        su airflow -c "airflow db migrate"
+        su airflow -c "airflow users create \
           --username admin \
           --firstname Admin \
           --lastname User \
           --role Admin \
           --email admin@example.com \
-          --password admin || true
+          --password admin" || true
         echo "Airflow initialization completed"
 
   airflow-webserver:
     build: ./airflow
     container_name: mlops-airflow-webserver
+    user: "0:0"
     depends_on:
       postgres:
         condition: service_healthy
@@ -85,11 +89,18 @@ services:
       retries: 5
       start_period: 30s
     restart: always
-    command: webserver
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        chown -R 50000:0 /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+        chmod -R 775 /opt/airflow/logs
+        su airflow -c "airflow webserver"
 
   airflow-scheduler:
     build: ./airflow
     container_name: mlops-airflow-scheduler
+    user: "0:0"
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,14 +117,21 @@ services:
       - ../dags:/opt/airflow/dags
       - ../logs:/opt/airflow/logs
       - ../plugins:/opt/airflow/plugins
+      - /var/run/docker.sock:/var/run/docker.sock
     healthcheck:
-      test: ["CMD", "airflow", "jobs", "check", "--job-type", "SchedulerJob", "--hostname", "$${HOSTNAME}"]
+      test: ["CMD-SHELL", "su airflow -c 'airflow jobs check --job-type SchedulerJob --hostname $$HOSTNAME'"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 30s
     restart: always
-    command: scheduler
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        chown -R 50000:0 /opt/airflow/logs /opt/airflow/dags /opt/airflow/plugins
+        chmod -R 775 /opt/airflow/logs
+        su airflow -c "airflow scheduler"
 
   backend:
     build: ../backend
@@ -135,6 +153,17 @@ services:
     ports:
       - "8000:8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: always
+
+  frontend:
+    build: ../frontend
+    container_name: mlops-frontend
+    depends_on:
+      - backend
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    ports:
+      - "3000:80"
     restart: always
 
 volumes:

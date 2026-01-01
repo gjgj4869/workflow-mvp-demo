@@ -25,6 +25,22 @@ def create_task(
             detail=f"Workflow {task_in.workflow_id} not found"
         )
 
+    # Validate task execution mode: must have either python_callable OR (script_path AND function_name)
+    has_inline_code = task_in.python_callable is not None and task_in.python_callable.strip()
+    has_git_config = task_in.script_path and task_in.function_name
+
+    if not has_inline_code and not has_git_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task must have either 'python_callable' (inline code) OR both 'script_path' and 'function_name' (Git-based)"
+        )
+
+    if has_inline_code and has_git_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task cannot have both inline code and Git configuration. Choose one execution mode."
+        )
+
     # Check if task with same name exists in this workflow
     existing = db.query(Task).filter(
         Task.workflow_id == task_in.workflow_id,
@@ -79,6 +95,22 @@ def update_task(
     update_data = task_in.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(task, field, value)
+
+    # Validate task execution mode after update
+    has_inline_code = task.python_callable is not None and task.python_callable.strip()
+    has_git_config = task.script_path and task.function_name
+
+    if not has_inline_code and not has_git_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task must have either 'python_callable' (inline code) OR both 'script_path' and 'function_name' (Git-based)"
+        )
+
+    if has_inline_code and has_git_config:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Task cannot have both inline code and Git configuration. Choose one execution mode."
+        )
 
     db.commit()
     db.refresh(task)

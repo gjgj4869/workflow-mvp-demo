@@ -23,7 +23,7 @@ import {
   PlusOutlined,
   ArrowLeftOutlined,
 } from '@ant-design/icons';
-import { workflowApi, taskApi, jobApi, type Workflow, type Task } from '@/services/api';
+import { workflowApi, taskApi, jobApi, type Task } from '@/services/api';
 import TaskList from '@/components/TaskList';
 import TaskEditor from '@/components/TaskEditor';
 import TaskGraph from '@/components/TaskGraph';

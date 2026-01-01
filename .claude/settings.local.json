@@ -16,7 +16,25 @@
       "Bash(python:*)",
       "Bash(npm install)",
       "Bash(copy .env.example .env)",
-      "Bash(npm run dev:*)"
+      "Bash(npm run dev:*)",
+      "mcp__serena__list_dir",
+      "Bash(docker-compose:*)",
+      "Bash(docker logs:*)",
+      "Bash(rm:*)",
+      "Bash(mkdir:*)",
+      "Bash(chmod:*)",
+      "Bash(docker exec:*)",
+      "Bash(find:*)",
+      "mcp__serena__find_symbol",
+      "mcp__serena__check_onboarding_performed",
+      "mcp__serena__onboarding",
+      "mcp__serena__get_symbols_overview",
+      "mcp__serena__write_memory",
+      "Bash(docker cp:*)",
+      "mcp__serena__find_file",
+      "Bash(cat:*)",
+      "Bash(sort:*)",
+      "Bash(ls:*)"
     ]
   }
 }

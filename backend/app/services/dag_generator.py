@@ -41,7 +41,14 @@ class DAGGenerator:
         for task in tasks:
             tasks_data.append({
                 "task_id": task.name,
-                "python_callable": task.python_callable,
+                "execution_mode": task.execution_mode or "inline",
+                "python_callable": task.python_callable or "",
+                "git_repository": task.git_repository or "",
+                "git_branch": task.git_branch or "main",
+                "git_commit_sha": task.git_commit_sha or "",
+                "script_path": task.script_path or "",
+                "function_name": task.function_name or "",
+                "docker_image": task.docker_image or "python:3.9-slim",
                 "params": task.params or {},
                 "retry_count": task.retry_count or 0,
                 "retry_delay": task.retry_delay or 300,

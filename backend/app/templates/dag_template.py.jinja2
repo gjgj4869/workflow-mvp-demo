@@ -4,6 +4,7 @@
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.providers.docker.operators.docker import DockerOperator
 from datetime import datetime, timedelta
 
 # DAG default arguments
@@ -29,12 +30,103 @@ with DAG(
 
 {% for task in tasks %}
     # Task: {{ task.task_id }}
+{% if task.execution_mode == 'git' %}
+    # Git-based task: executes Python function from Git repository in Docker
+    {{ task.task_id }} = DockerOperator(
+        task_id='{{ task.task_id }}',
+        image='{{ task.docker_image }}',
+        api_version='auto',
+        auto_remove=True,
+        command=[
+            'sh', '-c',
+            '''
+            set -e
+            echo "=== Installing git ==="
+            apt-get update -qq && apt-get install -y -qq git > /dev/null 2>&1
+
+            echo "=== Cloning Git repository ==="
+            {% if task.git_commit_sha %}
+            # Specific commit SHA provided - clone and checkout that commit
+            git clone {{ task.git_repository }} /workspace
+            cd /workspace
+            git checkout {{ task.git_commit_sha }}
+            echo "Checked out commit: {{ task.git_commit_sha }}"
+            {% else %}
+            # No commit SHA - use latest from branch
+            git clone --depth 1 --branch {{ task.git_branch }} {{ task.git_repository }} /workspace
+            cd /workspace
+            echo "Using latest from branch: {{ task.git_branch }}"
+            {% endif %}
+
+            echo "=== Repository cloned successfully ==="
+            ls -la
+
+            {% if task.script_path.endswith('.txt') or 'requirements' in task.script_path %}
+            echo "=== Installing requirements ==="
+            if [ -f requirements.txt ]; then
+                pip install -q -r requirements.txt
+            fi
+            {% endif %}
+
+            echo "=== Executing Python function ==="
+            python3 -c "
+import sys
+sys.path.insert(0, '/workspace')
+
+# Import function from script
+from {{ task.script_path.replace('/', '.').replace('.py', '') }} import {{ task.function_name }}
+
+# Execute function
+print('Calling {{ task.function_name }}...')
+result = {{ task.function_name }}()
+print(f'Result: {result}')
+            "
+
+            echo "=== Task completed successfully ==="
+            '''
+        ],
+        docker_url='unix://var/run/docker.sock',
+        network_mode='bridge',
+        mount_tmp_dir=False,
+        retries={{ task.retry_count }},
+        retry_delay=timedelta(seconds={{ task.retry_delay }}),
+    )
+
+{% else %}
+    # Inline code task: executes Python code directly in Airflow worker
     def {{ task.task_id }}_func(**context):
         """
-        Auto-generated task function for: {{ task.task_id }}
+        Inline task function for: {{ task.task_id }}
         """
-        # User-defined Python code
-{{ task.python_callable | indent(8, first=True) }}
+        import json
+        import numpy as np
+
+        # Helper function to serialize data for XCom
+        def serialize_for_xcom(obj):
+            if isinstance(obj, np.ndarray):
+                return obj.tolist()
+            elif isinstance(obj, dict):
+                return {k: serialize_for_xcom(v) for k, v in obj.items()}
+            elif isinstance(obj, (list, tuple)):
+                return [serialize_for_xcom(item) for item in obj]
+            return obj
+
+        # Execute user-defined code
+        user_code = r'''{{ task.python_callable }}'''
+
+        # Create a local namespace for execution
+        local_vars = {'context': context, '__builtins__': __builtins__}
+
+        # Execute the user code
+        exec(user_code, local_vars)
+
+        # If user defined a function with the same name as task_id, call it
+        if '{{ task.task_id }}' in local_vars and callable(local_vars['{{ task.task_id }}']):
+            result = local_vars['{{ task.task_id }}']()
+            # Serialize result if it contains numpy arrays
+            if result is not None:
+                result = serialize_for_xcom(result)
+            return result
 
     {{ task.task_id }} = PythonOperator(
         task_id='{{ task.task_id }}',
@@ -44,6 +136,8 @@ with DAG(
         retry_delay=timedelta(seconds={{ task.retry_delay }}),
         provide_context=True,
     )
+{% endif %}
+
 {% endfor %}
 
     # Task Dependencies
