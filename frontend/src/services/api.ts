@@ -16,6 +16,7 @@ export interface Workflow {
   description?: string;
   schedule?: string;
   is_active: boolean;
+  is_paused_in_airflow?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -147,6 +148,21 @@ export const workflowApi = {
 
   deploy: async (id: string): Promise<{ message: string; dag_id: string; dag_file: string }> => {
     const response = await apiClient.post(`/api/v1/workflows/${id}/deploy`);
+    return response.data;
+  },
+
+  pause: async (id: string): Promise<{ message: string; dag_id: string }> => {
+    const response = await apiClient.post(`/api/v1/workflows/${id}/pause`);
+    return response.data;
+  },
+
+  unpause: async (id: string): Promise<{ message: string; dag_id: string }> => {
+    const response = await apiClient.post(`/api/v1/workflows/${id}/unpause`);
+    return response.data;
+  },
+
+  unpauseAllActive: async (): Promise<{ message: string; success_count: number; failed_count: number }> => {
+    const response = await apiClient.post('/api/v1/workflows/unpause-all-active');
     return response.data;
   },
 };

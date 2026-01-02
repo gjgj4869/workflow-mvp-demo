@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
 
-from app.api.deps import get_db, get_dag_generator
+from app.api.deps import get_db, get_dag_generator, get_airflow_client
 from app.models.workflow import Workflow
 from app.models.task import Task
 from app.schemas.workflow import (
@@ -15,6 +15,7 @@ from app.schemas.workflow import (
 )
 from app.services.dag_generator import DAGGenerator
 from app.services.yaml_service import YAMLWorkflowService
+from app.services.airflow_client import AirflowClient
 
 router = APIRouter()
 
@@ -43,14 +44,25 @@ def create_workflow(
 
 
 @router.get("/", response_model=WorkflowListResponse)
-def list_workflows(
+async def list_workflows(
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    airflow: AirflowClient = Depends(get_airflow_client)
 ):
-    """List all workflows with pagination"""
+    """List all workflows with pagination and Airflow pause status"""
     total = db.query(Workflow).count()
     workflows = db.query(Workflow).offset(skip).limit(limit).all()
+
+    # Fetch pause status from Airflow for each workflow
+    for workflow in workflows:
+        dag_id = f"workflow_{workflow.id}"
+        try:
+            dag_info = await airflow.get_dag(dag_id)
+            workflow.is_paused_in_airflow = dag_info.get("is_paused", None)
+        except Exception as e:
+            # If DAG doesn't exist or error occurs, set to None
+            workflow.is_paused_in_airflow = None
 
     return WorkflowListResponse(
         total=total,
@@ -61,17 +73,26 @@ def list_workflows(
 
 
 @router.get("/{workflow_id}", response_model=WorkflowResponse)
-def get_workflow(
+async def get_workflow(
     workflow_id: UUID,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    airflow: AirflowClient = Depends(get_airflow_client)
 ):
-    """Get workflow by ID"""
+    """Get workflow by ID with Airflow pause status"""
     workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
     if not workflow:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Workflow {workflow_id} not found"
         )
+
+    # Fetch pause status from Airflow
+    dag_id = f"workflow_{workflow.id}"
+    try:
+        dag_info = await airflow.get_dag(dag_id)
+        workflow.is_paused_in_airflow = dag_info.get("is_paused", None)
+    except Exception as e:
+        workflow.is_paused_in_airflow = None
 
     return workflow
 
@@ -171,6 +192,95 @@ def deploy_workflow(
         )
 
 
+@router.post("/{workflow_id}/pause")
+async def pause_workflow(
+    workflow_id: UUID,
+    db: Session = Depends(get_db),
+    airflow: AirflowClient = Depends(get_airflow_client)
+):
+    """Pause workflow in Airflow"""
+    # Get workflow
+    workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+
+    dag_id = f"workflow_{workflow_id}"
+    try:
+        await airflow.pause_dag(dag_id, is_paused=True)
+        return {"message": "Workflow paused successfully", "dag_id": dag_id}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to pause workflow: {str(e)}"
+        )
+
+
+@router.post("/{workflow_id}/unpause")
+async def unpause_workflow(
+    workflow_id: UUID,
+    db: Session = Depends(get_db),
+    airflow: AirflowClient = Depends(get_airflow_client)
+):
+    """Unpause workflow in Airflow"""
+    # Get workflow
+    workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+
+    dag_id = f"workflow_{workflow_id}"
+    try:
+        await airflow.unpause_dag(dag_id)
+        return {"message": "Workflow unpaused successfully", "dag_id": dag_id}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to unpause workflow: {str(e)}"
+        )
+
+
+@router.post("/unpause-all-active")
+async def unpause_all_active_workflows(
+    db: Session = Depends(get_db),
+    airflow: AirflowClient = Depends(get_airflow_client)
+):
+    """Unpause all active workflows in Airflow"""
+    # Get all active workflows
+    workflows = db.query(Workflow).filter(Workflow.is_active == True).all()
+    
+    success_count = 0
+    failed_count = 0
+    results = []
+    
+    for workflow in workflows:
+        dag_id = f"workflow_{workflow.id}"
+        try:
+            # Check if DAG exists in Airflow
+            dag_info = await airflow.get_dag(dag_id)
+            if dag_info.get("is_paused", False):
+                await airflow.unpause_dag(dag_id)
+                success_count += 1
+                results.append({"workflow_id": str(workflow.id), "name": workflow.name, "status": "unpaused"})
+            else:
+                results.append({"workflow_id": str(workflow.id), "name": workflow.name, "status": "already_running"})
+        except Exception as e:
+            failed_count += 1
+            results.append({"workflow_id": str(workflow.id), "name": workflow.name, "status": "failed", "error": str(e)})
+    
+    return {
+        "message": f"Unpaused {success_count} workflows, {failed_count} failed",
+        "total_active": len(workflows),
+        "success_count": success_count,
+        "failed_count": failed_count,
+        "results": results
+    }
+
+
 @router.get("/{workflow_id}/tasks")
 def get_workflow_tasks(
     workflow_id: UUID,
@@ -194,13 +304,15 @@ def get_workflow_tasks(
 @router.post("/import-yaml", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
 async def import_workflow_from_yaml(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    dag_gen: DAGGenerator = Depends(get_dag_generator)
 ):
     """
     Import workflow from YAML file
 
     Upload a YAML file to create a new workflow with tasks.
     The YAML file should follow the MLOps Workflow specification.
+    The workflow will be automatically deployed to Airflow.
     """
     # Read file content
     try:
@@ -215,7 +327,18 @@ async def import_workflow_from_yaml(
     # Import workflow
     try:
         result = YAMLWorkflowService.import_from_yaml(yaml_str, db)
-        return result["workflow"]
+        workflow = result["workflow"]
+        tasks = result["tasks"]
+        
+        # Auto-deploy the DAG to Airflow
+        if tasks:
+            try:
+                dag_gen.deploy_dag(workflow, tasks)
+            except Exception as e:
+                # Log the error but don't fail the import
+                print(f"Warning: Failed to auto-deploy DAG for workflow {workflow.id}: {str(e)}")
+        
+        return workflow
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

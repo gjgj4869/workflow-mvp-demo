@@ -37,6 +37,17 @@ async def trigger_workflow(
     # Trigger DAG in Airflow
     dag_id = f"workflow_{workflow_id}"
     try:
+        # Check if DAG is paused and auto-unpause if needed
+        try:
+            dag_info = await airflow.get_dag(dag_id)
+            if dag_info.get("is_paused", False):
+                print(f"DAG {dag_id} is paused, auto-unpausing...")
+                await airflow.unpause_dag(dag_id)
+                print(f"DAG {dag_id} unpaused successfully")
+        except Exception as e:
+            print(f"Warning: Failed to check/unpause DAG status: {e}")
+            # Continue with trigger attempt anyway
+
         airflow_response = await airflow.trigger_dag(dag_id)
         dag_run_id = airflow_response.get("dag_run_id")
 
@@ -62,14 +73,15 @@ async def trigger_workflow(
 
 
 @router.get("/", response_model=JobRunListResponse)
-def list_job_runs(
+async def list_job_runs(
     workflow_id: Optional[UUID] = None,
     status_filter: Optional[str] = None,
     skip: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    airflow: AirflowClient = Depends(get_airflow_client)
 ):
-    """List job runs with optional filtering"""
+    """List job runs with optional filtering and sync status from Airflow"""
     query = db.query(JobRun)
 
     if workflow_id:
@@ -80,6 +92,38 @@ def list_job_runs(
 
     total = query.count()
     job_runs = query.order_by(JobRun.created_at.desc()).offset(skip).limit(limit).all()
+
+    # Sync status from Airflow for each job run
+    for job_run in job_runs:
+        if job_run.dag_run_id and job_run.status == "running":
+            try:
+                dag_id = f"workflow_{job_run.workflow_id}"
+                airflow_run = await airflow.get_dag_run(dag_id, job_run.dag_run_id)
+
+                # Update status
+                airflow_state = airflow_run.get("state", "").lower()
+                if airflow_state in ["success", "failed", "running"]:
+                    job_run.status = airflow_state
+
+                # Update timestamps
+                if airflow_run.get("start_date"):
+                    job_run.started_at = datetime.fromisoformat(
+                        airflow_run["start_date"].replace("Z", "+00:00")
+                    )
+                if airflow_run.get("end_date"):
+                    job_run.ended_at = datetime.fromisoformat(
+                        airflow_run["end_date"].replace("Z", "+00:00")
+                    )
+
+                db.commit()
+
+            except Exception as e:
+                # If Airflow request fails, just keep current state
+                print(f"Failed to sync job run {job_run.id} status from Airflow: {e}")
+
+    # Refresh all job runs to get updated data
+    for job_run in job_runs:
+        db.refresh(job_run)
 
     return JobRunListResponse(
         total=total,

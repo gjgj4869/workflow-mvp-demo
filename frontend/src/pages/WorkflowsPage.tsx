@@ -23,6 +23,9 @@ import {
   StopOutlined,
   DownloadOutlined,
   UploadOutlined,
+  CheckCircleOutlined,
+  PauseCircleOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons';
 import { workflowApi, type Workflow, type WorkflowCreate } from '@/services/api';
 import dayjs from 'dayjs';
@@ -40,6 +43,7 @@ function WorkflowsPage() {
   const { data: workflows, isLoading } = useQuery({
     queryKey: ['workflows'],
     queryFn: workflowApi.list,
+    refetchInterval: 5000, // Auto-refresh every 5 seconds to sync with Airflow
   });
 
   // Create workflow mutation
@@ -68,12 +72,56 @@ function WorkflowsPage() {
     },
   });
 
+  // Pause workflow mutation
+  const pauseMutation = useMutation({
+    mutationFn: workflowApi.pause,
+    onSuccess: () => {
+      message.success('Workflow paused in Airflow');
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.detail || 'Failed to pause workflow');
+    },
+  });
+
+  // Unpause workflow mutation
+  const unpauseMutation = useMutation({
+    mutationFn: workflowApi.unpause,
+    onSuccess: () => {
+      message.success('Workflow unpaused in Airflow');
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.detail || 'Failed to unpause workflow');
+    },
+  });
+
+  // Unpause all active workflows mutation
+  const unpauseAllMutation = useMutation({
+    mutationFn: workflowApi.unpauseAllActive,
+    onSuccess: (data) => {
+      message.success(`Unpaused ${data.success_count} workflows successfully`);
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+    },
+    onError: (error: any) => {
+      message.error(error.response?.data?.detail || 'Failed to unpause workflows');
+    },
+  });
+
   const handleCreate = async (values: WorkflowCreate) => {
     createMutation.mutate(values);
   };
 
   const handleDelete = (id: string) => {
     deleteMutation.mutate(id);
+  };
+
+  const handleTogglePause = (workflow: Workflow) => {
+    if (workflow.is_paused_in_airflow) {
+      unpauseMutation.mutate(workflow.id);
+    } else {
+      pauseMutation.mutate(workflow.id);
+    }
   };
 
   const handleExportYAML = async (workflow: Workflow) => {
@@ -162,6 +210,39 @@ function WorkflowsPage() {
       ),
     },
     {
+      title: 'Airflow Status',
+      dataIndex: 'is_paused_in_airflow',
+      key: 'is_paused_in_airflow',
+      render: (isPaused?: boolean, record?: Workflow) => {
+        if (isPaused === null || isPaused === undefined) {
+          return (
+            <Tag color="default" icon={<QuestionCircleOutlined />}>
+              Not Deployed
+            </Tag>
+          );
+        }
+        return (
+          <Space>
+            <Tag
+              color={isPaused ? 'orange' : 'success'}
+              icon={isPaused ? <PauseCircleOutlined /> : <CheckCircleOutlined />}
+            >
+              {isPaused ? 'Paused' : 'Running'}
+            </Tag>
+            <Button
+              size="small"
+              type={isPaused ? 'primary' : 'default'}
+              icon={isPaused ? <CheckCircleOutlined /> : <PauseCircleOutlined />}
+              onClick={() => record && handleTogglePause(record)}
+              loading={pauseMutation.isPending || unpauseMutation.isPending}
+            >
+              {isPaused ? 'Unpause' : 'Pause'}
+            </Button>
+          </Space>
+        );
+      },
+    },
+    {
       title: 'Created',
       dataIndex: 'created_at',
       key: 'created_at',
@@ -208,6 +289,13 @@ function WorkflowsPage() {
         title="Workflows"
         extra={
           <Space>
+            <Button
+              icon={<CheckCircleOutlined />}
+              onClick={() => unpauseAllMutation.mutate()}
+              loading={unpauseAllMutation.isPending}
+            >
+              Unpause All Active
+            </Button>
             <Upload
               accept=".yaml,.yml"
               beforeUpload={handleImportYAML}

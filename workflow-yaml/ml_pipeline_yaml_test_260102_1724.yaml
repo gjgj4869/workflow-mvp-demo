@@ -1,0 +1,42 @@
+﻿version: '1.0'
+workflow:
+  name: ml_pipeline_yaml_test_260102_1724
+  description: ML Pipeline using Git repository functions
+  schedule: '@daily'
+  is_active: ture
+tasks:
+- name: evaluate_model
+  execution_mode: git
+  docker_image: python:3.9-slim
+  dependencies:
+  - train_model
+  retry_count: 1
+  retry_delay: 300
+  git_repository: https://github.com/gjgj4869/mlops-workflow-test.git
+  git_branch: main
+  git_commit_sha: null
+  script_path: src/train.py
+  function_name: evaluate_model
+- name: load_data
+  execution_mode: git
+  docker_image: python:3.9-slim
+  dependencies: []
+  retry_count: 2
+  retry_delay: 300
+  git_repository: https://github.com/gjgj4869/mlops-workflow-test.git
+  git_branch: main
+  git_commit_sha: null
+  script_path: src/data.py
+  function_name: load_data
+- name: train_model
+  execution_mode: git
+  docker_image: python:3.9-slim
+  dependencies:
+  - load_data
+  retry_count: 2
+  retry_delay: 600
+  git_repository: https://github.com/gjgj4869/mlops-workflow-test.git
+  git_branch: main
+  git_commit_sha: null
+  script_path: src/train.py
+  function_name: train_model

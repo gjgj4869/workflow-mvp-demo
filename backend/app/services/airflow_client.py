@@ -181,6 +181,18 @@ class AirflowClient:
             response.raise_for_status()
             return response.json()
 
+    async def unpause_dag(self, dag_id: str) -> Dict[str, Any]:
+        """
+        Unpause a DAG (convenience method)
+
+        Args:
+            dag_id: The DAG ID
+
+        Returns:
+            Updated DAG information
+        """
+        return await self.pause_dag(dag_id, is_paused=False)
+
     async def health_check(self) -> bool:
         """
         Check if Airflow API is healthy

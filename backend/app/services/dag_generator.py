@@ -1,6 +1,8 @@
 from jinja2 import Template
 from pathlib import Path
 from typing import List
+import httpx
+import time
 from app.models.workflow import Workflow
 from app.models.task import Task
 
@@ -8,16 +10,18 @@ from app.models.task import Task
 class DAGGenerator:
     """Generator for creating Airflow DAG files from Workflow and Task models"""
 
-    def __init__(self, dags_folder: str):
+    def __init__(self, dags_folder: str, airflow_api_url: str = "http://airflow-webserver:8080"):
         """
         Initialize DAG Generator
 
         Args:
             dags_folder: Path to the Airflow dags folder
+            airflow_api_url: Airflow webserver URL for API calls
         """
         self.dags_folder = Path(dags_folder)
         self.dags_folder.mkdir(parents=True, exist_ok=True)
         self.template = self._load_template()
+        self.airflow_api_url = airflow_api_url
 
     def _load_template(self) -> Template:
         """Load the DAG template from file"""
@@ -66,6 +70,54 @@ class DAGGenerator:
 
         return dag_code
 
+    def unpause_dag(self, dag_id: str, max_retries: int = 10, retry_delay: int = 3) -> bool:
+        """
+        Unpause DAG in Airflow via API
+
+        Args:
+            dag_id: DAG ID to unpause
+            max_retries: Maximum number of retry attempts
+            retry_delay: Delay between retries in seconds
+
+        Returns:
+            True if successfully unpaused, False otherwise
+        """
+        url = f"{self.airflow_api_url}/api/v1/dags/{dag_id}"
+
+        # Airflow API credentials (default: admin/admin)
+        auth = ("admin", "admin")
+
+        for attempt in range(max_retries):
+            try:
+                # Wait for Airflow to pick up the new DAG file
+                if attempt > 0:
+                    time.sleep(retry_delay)
+
+                # Update DAG to unpause
+                response = httpx.patch(
+                    url,
+                    json={"is_paused": False},
+                    auth=auth,
+                    timeout=10.0
+                )
+
+                if response.status_code == 200:
+                    return True
+                elif response.status_code == 404:
+                    # DAG not found yet, retry
+                    continue
+                else:
+                    print(f"Failed to unpause DAG {dag_id}: {response.status_code} - {response.text}")
+                    return False
+
+            except Exception as e:
+                print(f"Error unpausing DAG {dag_id} (attempt {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt == max_retries - 1:
+                    return False
+                continue
+
+        return False
+
     def deploy_dag(self, workflow: Workflow, tasks: List[Task]) -> Path:
         """
         Generate and deploy DAG file to Airflow dags folder
@@ -86,6 +138,10 @@ class DAGGenerator:
 
         # Write DAG file
         dag_file_path.write_text(dag_code, encoding='utf-8')
+
+        # Auto-unpause DAG in Airflow (with longer retry window for DAG serialization)
+        dag_id = f"workflow_{workflow.id}"
+        self.unpause_dag(dag_id, max_retries=20, retry_delay=5)
 
         return dag_file_path
 

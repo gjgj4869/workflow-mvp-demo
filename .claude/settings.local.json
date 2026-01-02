@@ -36,7 +36,11 @@
       "Bash(sort:*)",
       "Bash(ls:*)",
       "Bash(python3:*)",
-      "Bash(tee:*)"
+      "Bash(tee:*)",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__replace_symbol_body",
+      "mcp__serena__insert_after_symbol",
+      "Bash(npm run build:*)"
     ]
   }
 }

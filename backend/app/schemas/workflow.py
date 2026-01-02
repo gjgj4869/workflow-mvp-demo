@@ -30,6 +30,7 @@ class WorkflowResponse(WorkflowBase):
     id: UUID
     created_at: datetime
     updated_at: datetime
+    is_paused_in_airflow: Optional[bool] = Field(None, description="Whether the DAG is paused in Airflow")
 
     class Config:
         from_attributes = True
