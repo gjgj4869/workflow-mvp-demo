@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
@@ -13,6 +14,7 @@ from app.schemas.workflow import (
     WorkflowListResponse,
 )
 from app.services.dag_generator import DAGGenerator
+from app.services.yaml_service import YAMLWorkflowService
 
 router = APIRouter()
 
@@ -184,3 +186,120 @@ def get_workflow_tasks(
 
     tasks = db.query(Task).filter(Task.workflow_id == workflow_id).all()
     return {"workflow_id": workflow_id, "tasks": tasks}
+
+
+# ============== YAML Import/Export Endpoints ==============
+
+
+@router.post("/import-yaml", response_model=WorkflowResponse, status_code=status.HTTP_201_CREATED)
+async def import_workflow_from_yaml(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Import workflow from YAML file
+
+    Upload a YAML file to create a new workflow with tasks.
+    The YAML file should follow the MLOps Workflow specification.
+    """
+    # Read file content
+    try:
+        yaml_content = await file.read()
+        yaml_str = yaml_content.decode('utf-8')
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to read YAML file: {str(e)}"
+        )
+
+    # Import workflow
+    try:
+        result = YAMLWorkflowService.import_from_yaml(yaml_str, db)
+        return result["workflow"]
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to import workflow: {str(e)}"
+        )
+
+
+@router.get("/{workflow_id}/export-yaml")
+def export_workflow_to_yaml(
+    workflow_id: UUID,
+    db: Session = Depends(get_db)
+):
+    """
+    Export workflow to YAML format
+
+    Download the workflow and its tasks as a YAML file.
+    """
+    # Get workflow
+    workflow = db.query(Workflow).filter(Workflow.id == workflow_id).first()
+    if not workflow:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Workflow {workflow_id} not found"
+        )
+
+    # Get tasks
+    tasks = db.query(Task).filter(Task.workflow_id == workflow_id).all()
+
+    # Export to YAML
+    try:
+        yaml_content = YAMLWorkflowService.export_to_yaml(workflow, tasks)
+
+        # Return as downloadable file
+        return Response(
+            content=yaml_content,
+            media_type="application/x-yaml",
+            headers={
+                "Content-Disposition": f"attachment; filename={workflow.name}.yaml"
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to export workflow: {str(e)}"
+        )
+
+
+@router.post("/validate-yaml")
+async def validate_yaml_file(
+    file: UploadFile = File(...)
+):
+    """
+    Validate YAML file format without creating workflow
+
+    Upload a YAML file to check if it's valid according to the MLOps Workflow specification.
+    """
+    # Read file content
+    try:
+        yaml_content = await file.read()
+        yaml_str = yaml_content.decode('utf-8')
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to read YAML file: {str(e)}"
+        )
+
+    # Validate
+    result = YAMLWorkflowService.validate_yaml(yaml_str)
+
+    if result["valid"]:
+        return {
+            "valid": True,
+            "message": "YAML file is valid",
+            "workflow_name": result["data"]["workflow"]["name"],
+            "tasks_count": len(result["data"]["tasks"])
+        }
+    else:
+        return {
+            "valid": False,
+            "errors": result.get("errors", [result.get("error")])
+        }

@@ -34,7 +34,9 @@
       "mcp__serena__find_file",
       "Bash(cat:*)",
       "Bash(sort:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(python3:*)",
+      "Bash(tee:*)"
     ]
   }
 }

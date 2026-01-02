@@ -13,6 +13,7 @@ import {
   message,
   Popconfirm,
   Card,
+  Upload,
 } from 'antd';
 import {
   PlusOutlined,
@@ -20,6 +21,8 @@ import {
   DeleteOutlined,
   RocketOutlined,
   StopOutlined,
+  DownloadOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import { workflowApi, type Workflow, type WorkflowCreate } from '@/services/api';
 import dayjs from 'dayjs';
@@ -73,6 +76,60 @@ function WorkflowsPage() {
     deleteMutation.mutate(id);
   };
 
+  const handleExportYAML = async (workflow: Workflow) => {
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/workflows/${workflow.id}/export-yaml`
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to export workflow');
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${workflow.name}.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+      message.success(`Workflow exported as ${workflow.name}.yaml`);
+    } catch (error: any) {
+      message.error(error.message || 'Failed to export workflow');
+    }
+  };
+
+  const handleImportYAML = async (file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/v1/workflows/import-yaml`,
+        {
+          method: 'POST',
+          body: formData,
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to import workflow');
+      }
+
+      const result = await response.json();
+      message.success(`Workflow "${result.name}" imported successfully`);
+      queryClient.invalidateQueries({ queryKey: ['workflows'] });
+    } catch (error: any) {
+      message.error(error.message || 'Failed to import workflow');
+    }
+
+    return false; // Prevent default upload behavior
+  };
+
   const columns = [
     {
       title: 'Name',
@@ -122,6 +179,13 @@ function WorkflowsPage() {
           >
             Edit
           </Button>
+          <Button
+            type="link"
+            icon={<DownloadOutlined />}
+            onClick={() => handleExportYAML(record)}
+          >
+            Export YAML
+          </Button>
           <Popconfirm
             title="Delete workflow"
             description="Are you sure you want to delete this workflow?"
@@ -143,13 +207,24 @@ function WorkflowsPage() {
       <Card
         title="Workflows"
         extra={
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => setIsModalOpen(true)}
-          >
-            New Workflow
-          </Button>
+          <Space>
+            <Upload
+              accept=".yaml,.yml"
+              beforeUpload={handleImportYAML}
+              showUploadList={false}
+            >
+              <Button icon={<UploadOutlined />}>
+                Import YAML
+              </Button>
+            </Upload>
+            <Button
+              type="primary"
+              icon={<PlusOutlined />}
+              onClick={() => setIsModalOpen(true)}
+            >
+              New Workflow
+            </Button>
+          </Space>
         }
       >
         <Table
